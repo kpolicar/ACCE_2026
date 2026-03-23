@@ -6,4 +6,4 @@
 
 module load cuda12.3/toolkit
 
-nvprof --metrics issue_slot_utilization ./vectorAdd
+nvprof --metrics issue_slot_utilization ./matmul
