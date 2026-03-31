@@ -4,6 +4,6 @@
 #SBATCH --gres=gpu:1
 #SBATCH --constraint=TitanX
 
-module load cuda12.3/toolkit
+module load cuda12.6/toolkit
 
-nvprof --metrics warp_execution_efficiency,achieved_occupancy ./vectorAdd_adjust_blkdim 32
+nvprof --metrics warp_execution_efficiency,achieved_occupancy ./mm_blkdim 32

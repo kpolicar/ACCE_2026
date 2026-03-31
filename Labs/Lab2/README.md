@@ -1,31 +1,39 @@
-# Goals in Lab2
+# Lab 2: Basic CUDA Programming
 
-## GPU info query
-`sbatch GPU_INFO_QUERY.sh` gives you the results of `nvidia-smi`, `nvidia-smi -q` and `deviceQuery`.
+**Accelerator-Centric Computing Ecosystems (XM_0171)**  
+**Target hardware:** DAS-5 `gpunode,TitanX` (Maxwell, sm_52)
 
-## CUDA Programming
+## Getting started
 
-By using command `make filename` in each Task folder, it can automatically compile the file. 
+SSH into DAS-5 and copy the Lab2 directory to your home folder. Each task
+lives in its own subdirectory with a `.cu` source file and a batch script.
 
-### Task1: cudaMemcpy
-The vectorAdd_not_Mem.cu file doesn't move the array from host to device, so it gets error. Student need to modify it to get the "Test PASSED".
+Edit the source file to complete the TODOs, then make and run from within the
+task directory:
 
---> Complete the `vectorAdd_no_Mencpy.cu`
+```bash
+cd ~/Lab2/Task1
+make
+sbatch run_task1.sh
+```
 
-### Task2: Multi-Block Execution
+Check the output once your job finishes:
 
-Then the vectorAdd.cu still have oen block so the index is simple. Student need to modify the code to use more then one block.
+```bash
+cat task1_output_[job_id].txt
+```
 
---> Complete the `vectorAdd_more_blk_exercise.cu`
+Repeat for tasks 2 through 4.
 
-### Task3: Unified Memory
+## Task progression
 
-1. Measure the execution time in `vectorAdd_more_blk_unified_memory.cu`
+1. **Task 1: Memory management:** Use `cudaMalloc`, `cudaMemcpy`, `cudaFree`.
 
-2. Change the position of timer to also measure the data transfer time in `vectorAdd_explicit_memory.cu`
+2. **Task 2: Kernel implementation:** Write the matmul dot product.
+   With N=16 and a single block, `Test PASSED` should appear.
 
-### Task4: Grid stride-loop methodology
+3. **Task 3: Multi-block launch:** Compute `gridDim` with ceiling division to cover
+   the full 512x512 matrix. Includes CUDA event timing and speedup reporting.
 
-This method is particularly useful for large datasets where the number of elements exceeds the number of threads available. It allows for efficient utilization of the GPU resources by distributing the workload evenly across all threads.
-
---> Complete the `grid_strike_vectorAdd_exercise.cu`
+4. **Task 4: Grid-stride loop:** With a fixed small grid (4x4 blocks), each thread
+   must process multiple elements via a stride loop.
