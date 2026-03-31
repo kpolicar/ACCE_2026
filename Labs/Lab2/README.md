@@ -8,7 +8,7 @@
 SSH into DAS-5 and copy the Lab2 directory to your home folder. Each task
 lives in its own subdirectory with a `.cu` source file and a batch script.
 
-Edit the source file to complete the TODOs, then submit from within the
+Edit the source file to complete the TODOs, then make and run from within the
 task directory:
 
 ```bash
@@ -17,7 +17,6 @@ make
 sbatch run_task1.sh
 ```
 
-The batch script handles module loading, compilation, and execution.
 Check the output once your job finishes:
 
 ```bash
