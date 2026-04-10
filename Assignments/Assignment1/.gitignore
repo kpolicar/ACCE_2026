@@ -1,4 +1,2 @@
-*.o
 flood_seq
-*.err
-*.out
+flood_cuda
