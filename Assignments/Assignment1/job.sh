@@ -10,4 +10,8 @@
 #SBATCH --gres=gpu:1
 
 ## This is an example of a SLURM job script to run the program on a GPU node
+echo "=== Sequential ==="
+./flood_seq $(< test_files/debug.in)
+echo ""
+echo "=== CUDA ==="
 ./flood_cuda $(< test_files/debug.in)

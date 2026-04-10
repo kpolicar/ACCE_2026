@@ -47,12 +47,140 @@
 
 extern "C" double get_time();
 
+__host__ __device__ static inline int idx2d(int row, int col, int columns) {
+    return row * columns + col;
+}
+
+static inline float bits_to_float(unsigned int bits) {
+    union {
+        unsigned int u;
+        float f;
+    } cvt;
+    cvt.u = bits;
+    return cvt.f;
+}
+
+__global__ void compute_spillage_kernel(int rows, int columns, const float *ground, const int *water_level,
+                                        float *spillage_flag, float *spillage_level, float *spillage_from_neigh,
+                                        unsigned long long *total_water_loss) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row >= rows || col >= columns) {
+        return;
+    }
+
+    int idx = idx2d(row, col, columns);
+    spillage_flag[idx] = 0.0f;
+    spillage_level[idx] = 0.0f;
+
+    int water_i = water_level[idx];
+    if (water_i <= 0) {
+        return;
+    }
+
+    float water_f = (float)water_i / (float)PRECISION;
+    float current_height = ground[idx] + water_f;
+
+    const int dr[CONTIGUOUS_CELLS] = {-1, 1, 0, 0};
+    const int dc[CONTIGUOUS_CELLS] = {0, 0, -1, 1};
+
+    float diff_to_neigh[CONTIGUOUS_CELLS];
+    float sum_diff = 0.0f;
+    float my_spillage_level = 0.0f;
+
+#pragma unroll
+    for (int dir = 0; dir < CONTIGUOUS_CELLS; dir++) {
+        int new_row = row + dr[dir];
+        int new_col = col + dc[dir];
+
+        float neighbor_height;
+        if (new_row < 0 || new_row >= rows || new_col < 0 || new_col >= columns) {
+            neighbor_height = ground[idx];
+        } else {
+            int nidx = idx2d(new_row, new_col, columns);
+            neighbor_height = ground[nidx] + (float)water_level[nidx] / (float)PRECISION;
+        }
+
+        float height_diff = 0.0f;
+        if (current_height >= neighbor_height) {
+            height_diff = current_height - neighbor_height;
+            sum_diff += height_diff;
+            my_spillage_level = fmaxf(my_spillage_level, height_diff);
+        }
+        diff_to_neigh[dir] = height_diff;
+    }
+
+    my_spillage_level = fminf(water_f, my_spillage_level);
+
+    if (sum_diff > 0.0f) {
+        float proportion = my_spillage_level / sum_diff;
+        if (proportion > 1e-8f) {
+            spillage_flag[idx] = 1.0f;
+            spillage_level[idx] = my_spillage_level;
+
+#pragma unroll
+            for (int dir = 0; dir < CONTIGUOUS_CELLS; dir++) {
+                float flow = proportion * diff_to_neigh[dir];
+                if (flow <= 0.0f) {
+                    continue;
+                }
+
+                int new_row = row + dr[dir];
+                int new_col = col + dc[dir];
+
+                if (new_row < 0 || new_row >= rows || new_col < 0 || new_col >= columns) {
+                    unsigned long long loss_fixed = (unsigned long long)((int)(flow * ((float)PRECISION / SPILLAGE_FACTOR)));
+                    if (loss_fixed > 0ULL) {
+                        atomicAdd(total_water_loss, loss_fixed);
+                    }
+                } else {
+                    int nidx = idx2d(new_row, new_col, columns);
+                    spillage_from_neigh[nidx * CONTIGUOUS_CELLS + dir] = flow;
+                }
+            }
+        }
+    }
+}
+
+__global__ void apply_spillage_kernel(int rows, int columns, int *water_level, float *spillage_flag,
+                                      float *spillage_level, float *spillage_from_neigh,
+                                      unsigned int *max_spillage_bits) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row >= rows || col >= columns) {
+        return;
+    }
+
+    int idx = idx2d(row, col, columns);
+    int water = water_level[idx];
+
+    if (spillage_flag[idx] == 1.0f) {
+        float spill = spillage_level[idx] / SPILLAGE_FACTOR;
+        water -= FIXED(spill);
+        atomicMax(max_spillage_bits, __float_as_uint(spill));
+    }
+
+    int base = idx * CONTIGUOUS_CELLS;
+#pragma unroll
+    for (int dir = 0; dir < CONTIGUOUS_CELLS; dir++) {
+        water += FIXED(spillage_from_neigh[base + dir] / SPILLAGE_FACTOR);
+        spillage_from_neigh[base + dir] = 0.0f;
+    }
+
+    spillage_flag[idx] = 0.0f;
+    spillage_level[idx] = 0.0f;
+    water_level[idx] = water;
+}
+
 /*
  * Main compute function
  */
 extern "C" void do_compute(struct parameters *p, struct results *r) {
     int rows = p->rows, columns = p->columns;
     int *minute = &r->minute;
+    size_t cells = (size_t)rows * (size_t)columns;
 
     /* 2. Start global timer */
     CUDA_CHECK_FUNCTION(cudaSetDevice(0));
@@ -72,6 +200,14 @@ extern "C" void do_compute(struct parameters *p, struct results *r) {
     float *spillage_flag;       // Indicates which cells are spilling to neighbors
     float *spillage_level;      // Maximum level of spillage of each cell
     float *spillage_from_neigh; // Spillage from each neighbor
+
+    float *d_ground = NULL;
+    int *d_water_level = NULL;
+    float *d_spillage_flag = NULL;
+    float *d_spillage_level = NULL;
+    float *d_spillage_from_neigh = NULL;
+    unsigned long long *d_total_water_loss = NULL;
+    unsigned int *d_max_spillage_bits = NULL;
 
     ground = p->ground;
     water_level = (int *)malloc(sizeof(int) * (size_t)rows * (size_t)columns);
@@ -97,6 +233,24 @@ extern "C" void do_compute(struct parameters *p, struct results *r) {
         }
     }
 
+    CUDA_CHECK_FUNCTION(cudaMalloc((void **)&d_ground, sizeof(float) * cells));
+    CUDA_CHECK_FUNCTION(cudaMalloc((void **)&d_water_level, sizeof(int) * cells));
+    CUDA_CHECK_FUNCTION(cudaMalloc((void **)&d_spillage_flag, sizeof(float) * cells));
+    CUDA_CHECK_FUNCTION(cudaMalloc((void **)&d_spillage_level, sizeof(float) * cells));
+    CUDA_CHECK_FUNCTION(cudaMalloc((void **)&d_spillage_from_neigh, sizeof(float) * cells * CONTIGUOUS_CELLS));
+    CUDA_CHECK_FUNCTION(cudaMalloc((void **)&d_total_water_loss, sizeof(unsigned long long)));
+    CUDA_CHECK_FUNCTION(cudaMalloc((void **)&d_max_spillage_bits, sizeof(unsigned int)));
+
+    CUDA_CHECK_FUNCTION(cudaMemcpy(d_ground, ground, sizeof(float) * cells, cudaMemcpyHostToDevice));
+    CUDA_CHECK_FUNCTION(cudaMemset(d_water_level, 0, sizeof(int) * cells));
+    CUDA_CHECK_FUNCTION(cudaMemset(d_spillage_flag, 0, sizeof(float) * cells));
+    CUDA_CHECK_FUNCTION(cudaMemset(d_spillage_level, 0, sizeof(float) * cells));
+    CUDA_CHECK_FUNCTION(cudaMemset(d_spillage_from_neigh, 0, sizeof(float) * cells * CONTIGUOUS_CELLS));
+    CUDA_CHECK_FUNCTION(cudaMemset(d_total_water_loss, 0, sizeof(unsigned long long)));
+
+    dim3 block(16, 16);
+    dim3 grid((columns + block.x - 1) / block.x, (rows + block.y - 1) / block.y);
+
 #ifdef DEBUG
     print_matrix(PRECISION_FLOAT, rows, columns, ground, "Ground heights");
 #ifndef ANIMATION
@@ -111,9 +265,6 @@ extern "C" void do_compute(struct parameters *p, struct results *r) {
 
     /* Flood simulation */
     for (*minute = 0; *minute < p->num_minutes && max_spillage_iter > p->threshold; (*minute)++) {
-
-        int new_row, new_col;
-        int cell_pos;
 
         /* Step 1.1: Clouds movement */
         for (int cloud = 0; cloud < p->num_clouds; cloud++) {
@@ -163,112 +314,30 @@ extern "C" void do_compute(struct parameters *p, struct results *r) {
         print_matrix(PRECISION_FIXED, rows, columns, water_level, "Water after rain");
 #endif
 
-        /* Step 2: Compute water spillage to neighbor cells */
-        for (row_pos = 0; row_pos < rows; row_pos++) {
-            for (col_pos = 0; col_pos < columns; col_pos++) {
-                if (accessMat(water_level, row_pos, col_pos) > 0) {
-                    float sum_diff = 0;
-                    float my_spillage_level = 0;
+        /* Step 2 + Step 3 (GPU): Compute and apply spillage */
+        CUDA_CHECK_FUNCTION(cudaMemcpy(d_water_level, water_level, sizeof(int) * cells, cudaMemcpyHostToDevice));
+        CUDA_CHECK_FUNCTION(cudaMemset(d_max_spillage_bits, 0, sizeof(unsigned int)));
 
-                    /* Differences between current-cell level and its neighbours  */
-                    float current_height =
-                        accessMat(ground, row_pos, col_pos) + FLOATING(accessMat(water_level, row_pos, col_pos));
+        compute_spillage_kernel<<<grid, block>>>(rows, columns, d_ground, d_water_level, d_spillage_flag,
+                                                 d_spillage_level, d_spillage_from_neigh, d_total_water_loss);
+        CUDA_CHECK_KERNEL();
 
-                    // Iterate over the four neighboring cells using the displacement array
-                    for (cell_pos = 0; cell_pos < CONTIGUOUS_CELLS; cell_pos++) {
-                        new_row = row_pos + displacements[cell_pos][0];
-                        new_col = col_pos + displacements[cell_pos][1];
+        apply_spillage_kernel<<<grid, block>>>(rows, columns, d_water_level, d_spillage_flag, d_spillage_level,
+                                               d_spillage_from_neigh, d_max_spillage_bits);
+        CUDA_CHECK_KERNEL();
+        CUDA_CHECK_FUNCTION(cudaDeviceSynchronize());
 
-                        float neighbor_height;
+        unsigned int max_spillage_bits = 0;
+        CUDA_CHECK_FUNCTION(
+            cudaMemcpy(&max_spillage_bits, d_max_spillage_bits, sizeof(unsigned int), cudaMemcpyDeviceToHost));
+        max_spillage_iter = bits_to_float(max_spillage_bits);
 
-                        // Check if the new position is within the matrix boundaries
-                        if (new_row < 0 || new_row >= rows || new_col < 0 || new_col >= columns)
-                            // Out of borders: Same height as the cell with no water
-                            neighbor_height = accessMat(ground, row_pos, col_pos);
-                        else
-                            // Neighbor cell: Ground height + water level
-                            neighbor_height = accessMat(ground, new_row, new_col) +
-                                              FLOATING(accessMat(water_level, new_row, new_col));
-
-                        // Compute level differences
-                        if (current_height >= neighbor_height) {
-                            float height_diff = current_height - neighbor_height;
-                            sum_diff += height_diff;
-                            my_spillage_level = MAX(my_spillage_level, height_diff);
-                        }
-                    }
-                    my_spillage_level = MIN(FLOATING(accessMat(water_level, row_pos, col_pos)), my_spillage_level);
-
-                    // Compute proportion of spillage to each neighbor
-                    if (sum_diff > 0.0) {
-                        float proportion = my_spillage_level / sum_diff;
-                        // If proportion is significative, spillage
-                        if (proportion > 1e-8) {
-                            accessMat(spillage_flag, row_pos, col_pos) = 1;
-                            accessMat(spillage_level, row_pos, col_pos) = my_spillage_level;
-
-                            // Iterate over the four neighboring cells using the displacement array
-                            for (cell_pos = 0; cell_pos < 4; cell_pos++) {
-                                new_row = row_pos + displacements[cell_pos][0];
-                                new_col = col_pos + displacements[cell_pos][1];
-
-                                float neighbor_height;
-
-                                // Check if the new position is within the matrix boundaries
-                                if (new_row < 0 || new_row >= rows || new_col < 0 || new_col >= columns) {
-                                    // Spillage out of the borders: Water loss
-                                    neighbor_height = accessMat(ground, row_pos, col_pos);
-                                    if (current_height >= neighbor_height) {
-                                        r->total_water_loss +=
-                                            FIXED(proportion * (current_height - neighbor_height) / 2);
-                                    }
-                                } else {
-                                    // Spillage to a neighbor cell
-                                    neighbor_height = accessMat(ground, new_row, new_col) +
-                                                      FLOATING(accessMat(water_level, new_row, new_col));
-                                    if (current_height >= neighbor_height) {
-                                        int depths = CONTIGUOUS_CELLS;
-                                        accessMat3D(spillage_from_neigh, new_row, new_col, cell_pos) =
-                                            proportion * (current_height - neighbor_height);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if (max_spillage_iter > r->max_spillage_scenario) {
+            r->max_spillage_scenario = max_spillage_iter;
+            r->max_spillage_minute = *minute;
         }
 
-        /* Step 3: Propagation of previuosly computer water spillage to/from neighbors */
-        max_spillage_iter = 0.0;
-        for (row_pos = 0; row_pos < rows; row_pos++) {
-            for (col_pos = 0; col_pos < columns; col_pos++) {
-                // If the cell has spillage
-                if (accessMat(spillage_flag, row_pos, col_pos) == 1) {
-
-                    // Eliminate the spillage from the origin cell
-                    accessMat(water_level, row_pos, col_pos) -=
-                        FIXED(accessMat(spillage_level, row_pos, col_pos) / SPILLAGE_FACTOR);
-
-                    // Compute termination condition: Maximum cell spillage during the iteration
-                    if (accessMat(spillage_level, row_pos, col_pos) / SPILLAGE_FACTOR > max_spillage_iter) {
-                        max_spillage_iter = accessMat(spillage_level, row_pos, col_pos) / SPILLAGE_FACTOR;
-                    }
-                    // Statistics: Record maximum cell spillage during the scenario and its time
-                    if (accessMat(spillage_level, row_pos, col_pos) / SPILLAGE_FACTOR > r->max_spillage_scenario) {
-                        r->max_spillage_scenario = accessMat(spillage_level, row_pos, col_pos) / SPILLAGE_FACTOR;
-                        r->max_spillage_minute = *minute;
-                    }
-                }
-
-                // Accumulate spillage from neighbors
-                for (cell_pos = 0; cell_pos < CONTIGUOUS_CELLS; cell_pos++) {
-                    int depths = CONTIGUOUS_CELLS;
-                    accessMat(water_level, row_pos, col_pos) +=
-                        FIXED(accessMat3D(spillage_from_neigh, row_pos, col_pos, cell_pos) / SPILLAGE_FACTOR);
-                }
-            }
-        }
+        CUDA_CHECK_FUNCTION(cudaMemcpy(water_level, d_water_level, sizeof(int) * cells, cudaMemcpyDeviceToHost));
 
 #ifdef DEBUG
 #ifndef ANIMATION
@@ -276,17 +345,6 @@ extern "C" void do_compute(struct parameters *p, struct results *r) {
 #endif
 #endif
 
-        /* Reset ancillary structures */
-        for (row_pos = 0; row_pos < rows; row_pos++) {
-            for (col_pos = 0; col_pos < columns; col_pos++) {
-                for (cell_pos = 0; cell_pos < CONTIGUOUS_CELLS; cell_pos++) {
-                    int depths = CONTIGUOUS_CELLS;
-                    accessMat3D(spillage_from_neigh, row_pos, col_pos, cell_pos) = 0;
-                }
-                accessMat(spillage_flag, row_pos, col_pos) = 0;
-                accessMat(spillage_level, row_pos, col_pos) = 0;
-            }
-        }
     }
 
     cudaDeviceSynchronize();
@@ -307,7 +365,20 @@ extern "C" void do_compute(struct parameters *p, struct results *r) {
         }
     }
 
+    unsigned long long total_water_loss = 0;
+    CUDA_CHECK_FUNCTION(cudaMemcpy(&total_water_loss, d_total_water_loss, sizeof(unsigned long long),
+                                   cudaMemcpyDeviceToHost));
+    r->total_water_loss = (long)total_water_loss;
+
     /* Free resources */
+    CUDA_CHECK_FUNCTION(cudaFree(d_ground));
+    CUDA_CHECK_FUNCTION(cudaFree(d_water_level));
+    CUDA_CHECK_FUNCTION(cudaFree(d_spillage_flag));
+    CUDA_CHECK_FUNCTION(cudaFree(d_spillage_level));
+    CUDA_CHECK_FUNCTION(cudaFree(d_spillage_from_neigh));
+    CUDA_CHECK_FUNCTION(cudaFree(d_total_water_loss));
+    CUDA_CHECK_FUNCTION(cudaFree(d_max_spillage_bits));
+
     free(ground);
     free(water_level);
     free(spillage_flag);
