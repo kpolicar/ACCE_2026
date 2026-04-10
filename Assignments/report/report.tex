@@ -61,7 +61,10 @@ A brief overview of the problem, motivation for GPU acceleration, and the struct
 
 \section{Parallelization}
 \textbf{Parallelizable sections and identification.}
-We analyzed loop dependencies in the reference code and found that Step 2 (spillage computation) and Step 3 (water update) are grid-wide passes where each iteration operates on one cell with the same arithmetic pattern. These phases dominate runtime and are therefore mapped to CUDA kernels. Step 1 (cloud movement and rainfall) was initially kept on the CPU to keep the first GPU version simple and easy to validate.
+We analyzed loop dependencies in the reference code and found that Step 2 (spillage computation) and Step 3 (water update) are grid-wide passes where each iteration operates on one cell with the same arithmetic pattern. These phases dominate runtime and are therefore mapped to CUDA kernels.
+
+\textbf{How to CUDA-parallelize rainfall (Step 1).}
+We keep the cloud list and \texttt{water\_level} on the GPU and run rainfall as a two-stage CUDA pass each minute. First, one thread per cloud updates cloud position and computes that cloud's bounding box on the grid. Second, a 2D grid kernel visits candidate cells in those boxes and accumulates rain into \texttt{water\_level} using fixed-point atomic adds. This avoids per-iteration host$\leftrightarrow$device copies of the full water matrix, preserves the original rainfall rule (distance-based contribution within cloud radius), and keeps all three simulation phases device-resident.
 
 \textbf{Workload distribution (geometry).}
 We use a 2D CUDA launch where each thread is responsible for one matrix cell $(row,col)$. Blocks are configured as $16\times16$, and the grid dimensions are computed from the terrain size. This mapping follows the natural 2D structure of the terrain and provides regular parallel work across the full domain.
