@@ -7,6 +7,7 @@
  *
  * Simulation of rainwater flooding
  * CUDA version (Implement your parallel version here)
+ * Version note: v2 also ports rainfall to GPU via one full-grid kernel.
  *
  * Adapted for ACCE at the VU, Period 5 2025-2026 from the original version by
  * Based on the EduHPC 2025: Peachy assignment, Computacion Paralela, Grado en Informatica (Universidad de Valladolid)
