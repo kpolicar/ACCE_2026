@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>VU ACCE Course - FPGA Group Project</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css">
+<link href="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.css" rel="stylesheet" type="text/css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <h1 id="vu-acce-course---fpga-group-project">VU ACCE Course - FPGA Group Project</h1>
+<h2 id="assignment-description">Assignment Description</h2>
+<p>The problem to implement for this assignment is a grid-based, iterative simulation of rainwater flood over a 30x30 KM terrain.
+It features a cloud front moving across a region of land characterized by a heightmap.
+The algorithm logic remains the same as in the previous assignment. We restate the key details below (section &quot;The Algorithm&quot;) for completeness.</p>
+<p>We want you to implement this algorithm using Vitis HLS for an FPGA. The assignment is split into two parts:</p>
+<ol>
+<li>Base Implementation: you have to port the original CPU-based algorithm to Vitis HLS, verify correctness, and analyze the synthesis results.</li>
+<li>Optimized Implementation (optional, but required for higher grades): improves the performance of the base implementation using performance optimization techniques (e.g., unrolling or pipelining loops not automatically optimized by the compiler, partitioning memory, etc.).</li>
+</ol>
+<h3 id="base-implementation">Base implementation</h3>
+<p>In this first part, you are asked to port the original CPU-based implementation to Vitis HLS.
+Your implementation must be written in the <code>flood_HLS_base.cpp</code>, <code>test_FLOOD_base.cpp</code>, <code>run_FLOOD_HLS_base.tcl</code>, and <code>FLOOD.h</code> files.</p>
+<p>To complete this part, you are required to:</p>
+<ul>
+<li>Remove unsupported C/C++ constructs (e.g., <code>malloc</code> is not synthesizable in Vitis HLS, while <code>memset</code> is), and avoid using pointers in top-level function struct arguments.</li>
+<li>Properly define the interfaces of the top-level function.</li>
+<li>Make sure that the corresponding implementation is correct in both C Simulation and RTL Co-Simulation:
+<ul>
+<li>For this, you have to explicitly set the grid size and cloud count as constants. You can conveniently define them in the TCL script. <strong>Be aware:</strong> this must be adjusted according to the considered scenario.</li>
+<li>For Co-Simulation, we suggest using a small simulation grid with fewer clouds and fewer iterations. This keeps RTL co-simulation time reasonable (a few minutes for <code>tiny_dam7c.in</code> on a 50x50 grid for 10 simulated minutes, if loop pipelining is enabled)</li>
+</ul>
+</li>
+<li>Analyze the performance by inspecting the produced synthesis report and the log file (with the default configuration provided with this assignment, you will find the latter under <code>FLOOD_HLS_base/solution_FLOOD_HLS_base/solution_FLOOD_HLS_base.log </code>). To make sense of it, you must:
+<ul>
+<li>Provide the synthesizer with hints about the number of iterations of loops. For this, you can consider using <code>#pragma HLS loop_tripcount</code> where needed.</li>
+<li>Reason about the performance of the various loops in the top function. We suggest you properly label them to easily identify them in the report. Aspects to discuss include (but are not limited to): <em>Are the loops pipelined? What is the achieved Initiation Interval (II)? Why is the II not equal to 1, if that's the case?</em></li>
+<li><strong>Note</strong>: by default, the provided TCL script disables automatic loop pipelining (check the <code>config_compile</code> flag in the script). For the sake of the analysis, we ask you to run synthesis and report your findings <strong>without and with</strong> automatic pipelining.</li>
+</ul>
+</li>
+</ul>
+<p>You will find more details on the files and directory organization under the <a href="#structure">Structure </a> section.</p>
+<h3 id="optimized-implementation">Optimized Implementation</h3>
+<p>After you complete the base implementation, you should have gained knowledge of some of the issues or limitations of the base implementation.
+In this optional (but recommended) part, you have the freedom to optimize your implementation, using some of the techniques we discussed in class, or other you can find in the Vitis documentation.</p>
+<p>Your implementation must be written in the <code>flood_HLS_optimized.cpp</code>, <code>test_FLOOD_optimized.cpp</code>, and <code>run_FLOOD_HLS_optimized.tcl</code> files. By default, they have the same content of the <code>_base</code> files.</p>
+<p>As in the previous step, we require you to:</p>
+<ul>
+<li>Ensure functional correctness.</li>
+<li>Analyze performance improvements and describe what changes you made, why they improved performance, and  which techniques were applied (e.g., loop unrolling, array partitioning, dataflow pipelining, etc.).</li>
+</ul>
+<h3 id="the-algorithm">The Algorithm</h3>
+<p>Note: this section is identical to the corresponding one of the GPU assignment.</p>
+<p>The problem for this assignment is grid-based, iterative simulation of rainwater flood over a 30x30 KM terrain.
+It features a cloud front moving across a region of land characterized by a heightmap.
+The input parameters include the grid size (finer grid size will increase the resolution and the level of details of the simulation), ground configuration (one of four presets), termination conditions and cloud configuration.</p>
+<p>The algorithm works as follows:</p>
+<ol>
+<li>Move all clouds across the grid based on their direction and velocity and add their rain to the water level.</li>
+<li>The water is redistributed among neighbors. Given a cell we:
+<ol>
+<li>Compute the potential water flow to adjacent cells in the grid.</li>
+<li>Distribute the water across the adjacent cells, proportionally to the relative differences of their total height (ground + water level).</li>
+</ol>
+</li>
+<li>Update the water array with the computed spillage.</li>
+</ol>
+<p>The algorithm repeats steps 1-3 until one of the following conditions is satisfied:</p>
+<ul>
+<li>None of the grid cells have a water flow exceeding a threshold.</li>
+<li>A maximum number of iterations (minutes) is reached.</li>
+</ul>
+<p>Step 2 lets the water flow the from higher regions to lower ones, gradually reducing height differences and tending towards equalizing levels. Out-of-bounds cells are treated as dry cells with the same height as their in-bounds neighbor.</p>
+<p><strong>Note:</strong> Further details can be found in the Assignment description provided as PDF.</p>
+<p>We want you to implement this algorithm with Vitis HLS.
+We suggest you not change this algorithm in your code. There might be floating point errors if you parallelize the algorithm in different ways, but the workflow should remain (mathematically) the same.</p>
+<h2 id="structure">Structure</h2>
+<p>The main FPGA implementation template is in the main folder, including a triplet of files for both the base and optimized implementations, along with some header files.
+The <code>test_files</code> folder contains a set of test files intended to verify the FPGA implementation, as described below.
+The <code>cpu_impl</code> folder contains the CPU sequential reference implementation. This implementation can be compiled using <code>make flood</code> (from within the folder) and then tested using <code>sbatch job.sh</code> while within the folder.</p>
+<p>In the top folder of this assignment you will find:</p>
+<ul>
+<li><code>flood_HLS_base.cpp</code> is the HLS code for the base implementation. Initially, it is, to a large extent, a copy of the cpu implementation. The <code>do_compute</code> is assumed to be the top function.</li>
+<li>the testbench file <code>test_FLOOD_base.cpp</code>, which includes functionalities to generate clouds, initialize the scenario, and invoke the top function.</li>
+<li>the TCL script <code>run_FLOOD_HLS_base.tcl</code>, that contains the commands to setup a project, running C-Simulation, Synthesis and Co-Simulation.</li>
+</ul>
+<p>There is an identical triplet of files for the optimized version of the code (second step of the assignment), whose names end with an <code>_optimized</code> suffix. By default, they have the same content of the <code>_base</code> files.</p>
+<p>Finally, the <code>FLOOD.h</code> contains data type definitions and utility macros.</p>
+<h3 id="input">Input</h3>
+<p>For the provided FPGA template, the input consists of a series of command line arguments. Most of them match the previous assignment, but there are some notable differences:</p>
+<ol>
+<li><code>&lt;output_file&gt;</code>: path to the file that will contain the output produced by the program execution.</li>
+<li><code>&lt;ground scenario (M|V|D|d)&gt;</code>: The heights of the terrain cells are stored in an array.
+The program includes four predefined terrain scenarios, which are selected using a single-character code:</li>
+</ol>
+<ul>
+<li><code>M</code>: Mountain lakes.</li>
+<li><code>V</code>: Valley.</li>
+<li><code>D</code>: Valley with a dam at slightly higher elevations.</li>
+<li><code>d</code>: Valley with a dam at lower elevations.</li>
+</ul>
+<ol start="3">
+<li><code>&lt;threshold&gt;</code> The simulation stops when the highest amount of water discharged from one cell to another falls below this threshold.</li>
+<li><code>&lt;num minutes&gt;</code> The simulation stops after this number of minutes has been simulated.</li>
+<li><code>&lt;exaggeration factor&gt;</code> Multiplier for the rainfall discharge intensity.
+It allows for a less realistic but faster simulation.
+For example, a value of 60 means that in one minute, the amount of rainwater corresponding to one hour is discharged.</li>
+<li><code>&lt;front distance&gt;</code> Distance between the center of the simulation domain and the center of the cloud front.</li>
+<li><code>&lt;front width&gt;</code> Width of the cloud front.</li>
+<li><code>&lt;front depth&gt;</code> Depth of the cloud front.
+These two parameters (width and depth) define the dimensions of the rectangular region within which random clouds are generated.
+This region is rotated and translated based on the other parameters in order to correctly position the front, so that its direction leads the clouds into the domain.</li>
+<li><code>&lt;front direction (degrees)&gt;</code> Direction of the cloud front in degrees.</li>
+<li><code>&lt;num random clouds&gt;</code> Number of clouds generated in the front.</li>
+<li><code>&lt;cloud max radius (km)&gt;</code> Maximum radius of the clouds.
+For each cloud, a radius is generated randomly between this value and its half.</li>
+<li><code>&lt;cloud max intensity (mm/h)&gt;</code> Maximum rainfall intensity.
+For each cloud, an intensity is generated randomly between this value and its half.
+Rainfall intensity is considered:</li>
+</ol>
+<ul>
+<li><code>Normal</code>: up to 15 mm/h,</li>
+<li><code>Heavy</code>: 15–30 mm/h,</li>
+<li><code>Very Heavy</code>: 30–60 mm/h,</li>
+<li><code>Torrential</code>: above 60 mm/h.  Torrential rainfall exceeding 120–140 mm/h is rare but realistic.</li>
+</ul>
+<ol start="13">
+<li><code>&lt;cloud max speed (km/h)&gt;</code> Maximum speed.
+Each cloud is assigned a speed randomly between this value and its half.</li>
+<li><code>&lt;cloud max angle aperture (degrees)&gt;</code> Maximum aperture angle.
+Each cloud’s movement direction is randomly selected within the range defined by the front direction plus or minus half of this angle.</li>
+<li><code>&lt;clouds rnd seed&gt;</code> Random seed used to reproduce the cloud generation in the front.</li>
+</ol>
+<p>The differences with respect to the previous assignment concern the presence of an output file path and the absence of the number of rows and columns in the grid, which are instead defined as constants (via TCL script).</p>
+<p>The <code>test_files</code> folder contains a few provided testing arguments.
+Each input file contains a sequence of command line arguments, which specify the various simulation parameters.
+While input files can be tested for any grid size (as configured via TCL script), they include a fixed number of clouds (as seen in the file names).
+For example, <code>test_files/tiny_mountains6c.in</code> is an input configuration that runs for 10 iterations (as defined inside the file) and contains 6 clouds (as also stated in the filename). The <code>test_files</code> folder under <code>cpu_impl</code> contains the corresponding input files (containing also the grid size) to be used with the cpu implementation.</p>
+<p>For synthesis, the cloud value must match the value defined in the TCL script. The runtime, as reported by the synthesis tool or as experienced in RTL Co-simulation, depends on the grid size, the number of clouds, and the number of simulated minutes.</p>
+<p>To run the program, you must execute the TCL script through the <code>vitis_hls</code> runtime:</p>
+<pre><code class="language-bash">vitis_hls -f run_FLOOD_HLS_base.tcl
+</code></pre>
+<p>Doing this properly (on a compute node) can, as always, be done with a simple slurm script:</p>
+<pre><code class="language-bash">$ sbatch job_base.sh
+</code></pre>
+<p>While you are allowed to generate your own input files for expanded experiments, we do expect to see a few reference configurations as described in the <a href="#evaluation">Evaluation</a> section, which details information (e.g., default grid sizes, number of minutes) for the provided scenarios.</p>
+<h3 id="output">Output</h3>
+<p>At the end of execution, the program outputs a set of aggregated statistics that helps verify the correctness of the results to a file.</p>
+<p>The name of this file corresponds with the first string in the input file, and, for C-simulation, it is stored at <code>FLOOD_HLS_base/solution_FLOOD_HLS_base/csim/build/tiny_mountains6c.out</code> for the <code>tiny_mountains6c</code> input file and base implementation.</p>
+<p>The output file is structured similarly to the output of the last assignment, so it includes:</p>
+<ol>
+<li>the total number of iterations executed</li>
+<li>the iteration at which the highest amount of water was transferred between two cells</li>
+<li>the maximum amount of water transferred in a single step</li>
+<li>the highest water level reached in any cell</li>
+<li>the total amount of rainwater discharged by the clouds</li>
+<li>the total amount of water remaining on the ground at the end of the simulation</li>
+<li>the amount of water lost through the boundaries of the terrain</li>
+</ol>
+<h3 id="verify-correctness">Verify Correctness</h3>
+<p>To verify correctness, the results of the parallel implementation are compared against those of the provided sequential reference implementation (ground truth):</p>
+<ul>
+<li>the first statistic must match exactly</li>
+<li>statistics [3-7] may exhibit small numerical differences due to floating-point rounding effects that can accumulate during the execution. For these values, a small relative error is tolerated.</li>
+</ul>
+<p>The reported &quot;Check precision loss&quot; summarizes the deviation in the last 3 statistics, and is acceptable if those 3 statistics are within the described margin.</p>
+<p>To automate correctness checking, you can use the provided <code>test_files/check_correctness.py</code> verification script. The scripts expects the path to two input files:</p>
+<ol>
+<li>the output of the sequential (reference) program</li>
+<li>the output of your FPGA implementation.</li>
+</ol>
+<p>A typical workflow is the following</p>
+<pre><code class="language-bash"><span class="hljs-comment"># Run the sequential version</span>
+$ <span class="hljs-built_in">cd</span> cpu_impl
+$ make flood
+$ sbatch job.sh
+
+<span class="hljs-comment"># Run the FPGA version</span>
+$ sbatch job_base.sh
+
+<span class="hljs-comment"># Wait for the job completion ...</span>
+
+<span class="hljs-comment"># Evaluate the correctness of the C-Simulation </span>
+$ python3 test_files/check_correctness.py cpu_impl/tiny_mountains.out FLOOD_HLS_base/solution_FLOOD_HLS_base/csim/build/tiny_mountains.out
+
+<span class="hljs-comment"># Evaluate the correctness of the RTL Co-simulation </span>
+$ python3 test_files/check_correctness.py cpu_impl/tiny_mountains.out FLOOD_HLS_base/solution_FLOOD_HLS_base/sim/wrapc_pc/tiny_mountains.out 
+</code></pre>
+<p>The script verifies that results are within the allowed tolerance and, if your implementation is correct, it will report:</p>
+<pre><code class="language-bash">Your output matches the reference.
+</code></pre>
+<h2 id="evaluation">Evaluation</h2>
+<p>Below you can find some information on how we will evaluate your implementation, together with some suggestion on how to approach this assignment.</p>
+<h3 id="correctness-of-your-implementation">Correctness of your implementation</h3>
+<p>We will check the correctness of your implementation with the following 4 scenarios.
+We expect you to test (at least) the following configurations for your report:</p>
+<ol>
+<li>tiny_mountains on a 40x40 grid, with 6 clouds, running for 10 minutes (iterations)</li>
+<li>tiny_dam on a 50x50 grid, with 7 clouds, running for 10 minutes (iterations)</li>
+<li>small_mountains on a 60x80 grid, with 9 clouds, running for 100 minutes (iterations)</li>
+<li>small_dam on a 90x90 grid, with 9 clouds, running for 120 minutes (iterations)</li>
+</ol>
+<p>For all of them, we will check the result of the C-simulation, and, for the first two (the smaller ones), also the results of the Co-Simulation.
+In both cases, we will use the approach described in the <a href="#verify-correctness">Verify Correctness</a> section.</p>
+<h3 id="performance">Performance</h3>
+<p>Provided that your code is correct (as defined above), the quality of your solution is evaluated by the latency, resource consumption, and synthesis frequency (Fmax) reported after the synthesis step (<code>csynth</code>). You can find this information in the report generated by the synthesis process (e.g., under <code>FLOOD_HLS_base/solution_FLOOD_HLS_base/syn/report</code>).</p>
+<p>For the optimized version, we expect a good implementation to reduce latency by 5x in the tiny scenarios compared to the base, pipelined implementation.</p>
+<h3 id="suggestions-on-how-to-approach-this-assignment">Suggestions on how to approach this assignment</h3>
+<ul>
+<li>Inspect the content of the TCL script. By default, it executes the full flow: C Simulation, Synthesis, and RTL Co-Simulation.</li>
+<li>If you wish to change the input dataset or skip specific steps, you must <strong>manually edit the TCL script accordingly</strong>.</li>
+<li>We suggest you start by verifying the C Simulation results, as this step is faster and helps catch early functional errors before proceeding to RTL Co-Simulation.</li>
+<li>Synthesis is a stochastic process: its results may vary depending on the compute node used. To ensure reproducibility, always run synthesis on the same compute node and <strong>mention it in your report</strong>.</li>
+<li>We removed from this assignment the <code>DEBUG</code> prints, as these do not match well with the file organization imposed by Vitis HLS. If you want to print debug information directly from the FPGA code, you can do that in C-simulation. Vitis HLS defines the macro <code>__SYNTHESIS__</code> when synthesis is performed. This allows the
+<code>__SYNTHESIS__</code> macro to exclude non-synthesizable code from the design. For instance, <code>printf</code> (if used) must be guarded by an <code>#ifndef __SYNTHESIS__</code> preprocessor directive.</li>
+<li>If you get a &quot;so-far unseen&quot; warnings from Vitis HLS (so, not about II violations, unsupported constructs, and loop-carried dependencies to mention some &quot;seen&quot; ones), in most of the cases these can be ignored as they might relate to possible stages of the hardware design that we will not touch. Make sure this is still nothing that prevents the correctness of your implementation. If in doubt, you can contact us via email or, better, via the support forum (so that others can benefit). We will do our best to get back to you as soon as possible.</li>
+<li>By default, the RTL Co-simulation step prints a lot of debug information. For this reason, we suppress some of them by default directly in the provided slurm job script (<code>job_base.sh</code>). If you want to inspect the full output, remove the <code>grep</code> commands from the script, but be aware that this could create large slurm output files. Please consider deleting them if they are not useful to you, as this will impact your quota.</li>
+<li>Similarly, note that the folder containing the reports and simulation output (by default <code>FLOOD_HLS_base</code>), might grow to some hundreds of megabytes. Consider deleting it if not needed.</li>
+</ul>
+
+            <script async src="https://cdn.jsdelivr.net/npm/katex-copytex@latest/dist/katex-copytex.min.js"></script>
+            
+        </body>
+        </html>
