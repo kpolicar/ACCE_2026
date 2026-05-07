@@ -1,0 +1,11 @@
+# Vitis HLS project output (hundreds of MB)
+FLOOD_HLS_base/
+FLOOD_HLS_optimized/
+
+# Vitis runtime logs and temp dirs
+vitis_hls.log
+*.jou
+.Xil/
+
+# CPU reference binary
+cpu_impl/flood

@@ -112,6 +112,7 @@ struct results {
     long total_rain;
 };
 
-void do_compute(struct parameters *p, struct results *r);
+void do_compute(float ground[NROWS * NCOLS], Cloud_t clouds[NCLOUDS], float threshold, int num_minutes, float ex_factor,
+                struct results *r);
 
 #endif

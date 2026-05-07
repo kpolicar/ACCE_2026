@@ -257,7 +257,7 @@ int main(int argc, char *argv[]) {
                         .total_water_loss = 0,
                         .total_rain = 0};
 
-    do_compute(&p, &r);
+    do_compute(ground, clouds, p.threshold, p.num_minutes, p.ex_factor, &r);
 
     /* Free resources */
     free(ground);

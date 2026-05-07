@@ -12,8 +12,6 @@
  * 2024/2025
  */
 
-#include <stdio.h>
-
 #include "FLOOD.h"
 
 /*
@@ -21,26 +19,15 @@
  */
 #include "rng.h"
 
-void do_compute(struct parameters *p, struct results *r) {
+void do_compute(float ground[NROWS * NCOLS], Cloud_t clouds[NCLOUDS], float threshold, int num_minutes, float ex_factor,
+                struct results *r) {
 
-    double max_spillage_iter = p->threshold + 1;
+    double max_spillage_iter = threshold + 1;
 
-    int *water_level;           // Level of water on each cell (fixed precision)
-    float *spillage_flag;       // Indicates which cells are spilling to neighbors
-    float *spillage_level;      // Maximum level of spillage of each cell
-    float *spillage_from_neigh; // Spillage from each neighbor
-
-    /* Initialization */
-    /* 3.1. Memory allocation */
-    water_level = (int *)malloc(sizeof(int) * (size_t)NROWS * (size_t)NCOLS);
-    spillage_flag = (float *)malloc(sizeof(float) * (size_t)NROWS * (size_t)NCOLS);
-    spillage_level = (float *)malloc(sizeof(float) * (size_t)NROWS * (size_t)NCOLS);
-    spillage_from_neigh = (float *)malloc(sizeof(float) * (size_t)NROWS * (size_t)NCOLS * (size_t)CONTIGUOUS_CELLS);
-
-    if (water_level == NULL || spillage_flag == NULL || spillage_level == NULL || spillage_from_neigh == NULL) {
-        fprintf(stderr, "-- Error allocating ground and rain structures for size: %d x %d \n", NROWS, NCOLS);
-        exit(EXIT_FAILURE);
-    }
+    int water_level[NROWS * NCOLS];                              // Level of water on each cell (fixed precision)
+    float spillage_flag[NROWS * NCOLS];                          // Indicates which cells are spilling to neighbors
+    float spillage_level[NROWS * NCOLS];                         // Maximum level of spillage of each cell
+    float spillage_from_neigh[NROWS * NCOLS * CONTIGUOUS_CELLS]; // Spillage from each neighbor
 
     /* Ground generation and initialization of other structures */
     int row_pos, col_pos, depth_pos;
@@ -56,7 +43,7 @@ void do_compute(struct parameters *p, struct results *r) {
     }
 
     /* Flood simulation (time iterations) */
-    for (r->minute = 0; r->minute < p->num_minutes && max_spillage_iter > p->threshold; r->minute++) {
+    for (r->minute = 0; r->minute < num_minutes && max_spillage_iter > threshold; r->minute++) {
 
         int new_row, new_col;
         int cell_pos;
@@ -64,17 +51,17 @@ void do_compute(struct parameters *p, struct results *r) {
         /* Step 1: Clouds movement */
         for (int cloud = 0; cloud < NCLOUDS; cloud++) {
             // Calculate new position (x are rows, y are columns)
-            p->clouds[cloud].x += p->clouds[cloud].dx / 60;
-            p->clouds[cloud].y += p->clouds[cloud].dy / 60;
+            clouds[cloud].x += clouds[cloud].dx / 60;
+            clouds[cloud].y += clouds[cloud].dy / 60;
         }
 
         /* Rainfall */
         for (int cloud = 0; cloud < NCLOUDS; cloud++) {
             // Compute the bounding box area of the cloud
-            float row_start = COORD_SCEN2MAT_Y(MAX(0, p->clouds[cloud].y - p->clouds[cloud].radius));
-            float row_end = COORD_SCEN2MAT_Y(MIN(p->clouds[cloud].y + p->clouds[cloud].radius, SCENARIO_SIZE));
-            float col_start = COORD_SCEN2MAT_X(MAX(0, p->clouds[cloud].x - p->clouds[cloud].radius));
-            float col_end = COORD_SCEN2MAT_X(MIN(p->clouds[cloud].x + p->clouds[cloud].radius, SCENARIO_SIZE));
+            float row_start = COORD_SCEN2MAT_Y(MAX(0, clouds[cloud].y - clouds[cloud].radius));
+            float row_end = COORD_SCEN2MAT_Y(MIN(clouds[cloud].y + clouds[cloud].radius, SCENARIO_SIZE));
+            float col_start = COORD_SCEN2MAT_X(MAX(0, clouds[cloud].x - clouds[cloud].radius));
+            float col_end = COORD_SCEN2MAT_X(MIN(clouds[cloud].x + clouds[cloud].radius, SCENARIO_SIZE));
             float distance;
 
             // Add rain to the ground water level
@@ -83,11 +70,10 @@ void do_compute(struct parameters *p, struct results *r) {
                 for (col_pos = col_start; col_pos < col_end; col_pos++) {
                     float x_pos = COORD_MAT2SCEN_X(col_pos);
                     float y_pos = COORD_MAT2SCEN_Y(row_pos);
-                    distance = sqrt(SQR(x_pos - p->clouds[cloud].x) + SQR(y_pos - p->clouds[cloud].y));
-                    if (distance < p->clouds[cloud].radius) {
-                        float rain =
-                            p->ex_factor * MAX(0, p->clouds[cloud].intensity - distance / p->clouds[cloud].radius *
-                                                                                   sqrt(p->clouds[cloud].intensity));
+                    distance = sqrt(SQR(x_pos - clouds[cloud].x) + SQR(y_pos - clouds[cloud].y));
+                    if (distance < clouds[cloud].radius) {
+                        float rain = ex_factor * MAX(0, clouds[cloud].intensity -
+                                                            distance / clouds[cloud].radius * sqrt(clouds[cloud].intensity));
                         float meters_per_minute = rain / 1000 / 60;
                         accessMat(water_level, row_pos, col_pos) += FIXED(meters_per_minute);
                         r->total_rain += FIXED(meters_per_minute);
@@ -105,7 +91,7 @@ void do_compute(struct parameters *p, struct results *r) {
 
                     /* Differences between current-cell level and its neighbours  */
                     float current_height =
-                        accessMat(p->ground, row_pos, col_pos) + FLOATING(accessMat(water_level, row_pos, col_pos));
+                        accessMat(ground, row_pos, col_pos) + FLOATING(accessMat(water_level, row_pos, col_pos));
 
                     // Iterate over the four neighboring cells using the displacement array
                     for (cell_pos = 0; cell_pos < CONTIGUOUS_CELLS; cell_pos++) {
@@ -117,10 +103,10 @@ void do_compute(struct parameters *p, struct results *r) {
                         // Check if the new position is within the matrix boundaries
                         if (new_row < 0 || new_row >= NROWS || new_col < 0 || new_col >= NCOLS)
                             // Out of borders: Same height as the cell with no water
-                            neighbor_height = accessMat(p->ground, row_pos, col_pos);
+                            neighbor_height = accessMat(ground, row_pos, col_pos);
                         else
                             // Neighbor cell: Ground height + water level
-                            neighbor_height = accessMat(p->ground, new_row, new_col) +
+                            neighbor_height = accessMat(ground, new_row, new_col) +
                                               FLOATING(accessMat(water_level, new_row, new_col));
 
                         // Compute level differences
@@ -150,14 +136,14 @@ void do_compute(struct parameters *p, struct results *r) {
                                 // Check if the new position is within the matrix boundaries
                                 if (new_row < 0 || new_row >= NROWS || new_col < 0 || new_col >= NCOLS) {
                                     // Spillage out of the borders: Water loss
-                                    neighbor_height = accessMat(p->ground, row_pos, col_pos);
+                                    neighbor_height = accessMat(ground, row_pos, col_pos);
                                     if (current_height >= neighbor_height) {
                                         r->total_water_loss +=
                                             FIXED(proportion * (current_height - neighbor_height) / 2);
                                     }
                                 } else {
                                     // Spillage to a neighbor cell
-                                    neighbor_height = accessMat(p->ground, new_row, new_col) +
+                                    neighbor_height = accessMat(ground, new_row, new_col) +
                                                       FLOATING(accessMat(water_level, new_row, new_col));
                                     if (current_height >= neighbor_height) {
                                         int depths = CONTIGUOUS_CELLS;
@@ -225,12 +211,6 @@ void do_compute(struct parameters *p, struct results *r) {
             r->total_water += accessMat(water_level, row_pos, col_pos);
         }
     }
-
-    /* 6. Free resources */
-    free(water_level);
-    free(spillage_flag);
-    free(spillage_level);
-    free(spillage_from_neigh);
 
     return;
 }
