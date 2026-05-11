@@ -32,11 +32,11 @@ void do_compute(float ground[NROWS * NCOLS], Cloud_t clouds[NCLOUDS], float thre
     float spillage_level[NROWS * NCOLS];                         // Maximum level of spillage of each cell
     float spillage_from_neigh[NROWS * NCOLS * CONTIGUOUS_CELLS]; // Spillage from each neighbor
 
-#pragma HLS ARRAY_PARTITION variable=spillage_from_neigh cyclic factor=4 dim=1
+#pragma HLS ARRAY_PARTITION variable=spillage_from_neigh cyclic factor=8 dim=1
 #pragma HLS ARRAY_PARTITION variable=water_level cyclic factor=8 dim=1
 #pragma HLS ARRAY_PARTITION variable=local_ground cyclic factor=8 dim=1
-#pragma HLS ARRAY_PARTITION variable=spillage_flag cyclic factor=2 dim=1
-#pragma HLS ARRAY_PARTITION variable=spillage_level cyclic factor=2 dim=1
+#pragma HLS ARRAY_PARTITION variable=spillage_flag cyclic factor=8 dim=1
+#pragma HLS ARRAY_PARTITION variable=spillage_level cyclic factor=8 dim=1
 
     /* Ground generation and initialization of other structures */
     for (int i = 0; i < NROWS * NCOLS; i++) {
@@ -47,6 +47,7 @@ void do_compute(float ground[NROWS * NCOLS], Cloud_t clouds[NCLOUDS], float thre
     for (row_pos = 0; row_pos < NROWS; row_pos++) {
         for (col_pos = 0; col_pos < NCOLS; col_pos++) {
 #pragma HLS PIPELINE II=1
+#pragma HLS UNROLL factor=2
             accessMat(water_level, row_pos, col_pos) = 0;
             accessMat(spillage_flag, row_pos, col_pos) = 0.0;
             accessMat(spillage_level, row_pos, col_pos) = 0.0;
@@ -88,6 +89,7 @@ void do_compute(float ground[NROWS * NCOLS], Cloud_t clouds[NCLOUDS], float thre
         for (int rr = 0; rr < NROWS; rr++) {
             for (int cc = 0; cc < NCOLS; cc++) {
 #pragma HLS PIPELINE II=1
+#pragma HLS UNROLL factor=2
                 int cell_sum = 0;
                 for (int cloud = 0; cloud < NCLOUDS; cloud++) {
 #pragma HLS UNROLL
@@ -113,8 +115,10 @@ void do_compute(float ground[NROWS * NCOLS], Cloud_t clouds[NCLOUDS], float thre
                         col_logical >= col_start && col_logical < col_end) {
                         float x_pos = COORD_MAT2SCEN_X(col_logical);
                         float y_pos = COORD_MAT2SCEN_Y(row_logical);
-                        float distance = sqrt(SQR(x_pos - c_x) + SQR(y_pos - c_y));
-                        if (distance < c_r) {
+                        float sq_dist = SQR(x_pos - c_x) + SQR(y_pos - c_y);
+                        // Math optimization: Test squared distance to skip sqrt unit computations
+                        if (sq_dist < c_r * c_r) {
+                            float distance = sqrt(sq_dist);
                             float rain = ex_factor * MAX(0, c_int - distance * inv_r * sqrt_int);
                             float meters_per_minute = rain * inv_60000;
                             int rain_fixed = FIXED(meters_per_minute);
@@ -135,6 +139,7 @@ void do_compute(float ground[NROWS * NCOLS], Cloud_t clouds[NCLOUDS], float thre
         for (row_pos = 0; row_pos < NROWS; row_pos++) {
             for (col_pos = 0; col_pos < NCOLS; col_pos++) {
 #pragma HLS PIPELINE II=1
+#pragma HLS UNROLL factor=2
                 if (accessMat(water_level, row_pos, col_pos) > 0) {
                     float sum_diff = 0;
                     float my_spillage_level = 0;
@@ -215,6 +220,7 @@ void do_compute(float ground[NROWS * NCOLS], Cloud_t clouds[NCLOUDS], float thre
         for (row_pos = 0; row_pos < NROWS; row_pos++) {
             for (col_pos = 0; col_pos < NCOLS; col_pos++) {
 #pragma HLS PIPELINE II=1
+#pragma HLS UNROLL factor=2
                 int my_water_level = accessMat(water_level, row_pos, col_pos);
                 // If the cell has spillage
                 if (accessMat(spillage_flag, row_pos, col_pos) == 1) {
@@ -255,6 +261,7 @@ void do_compute(float ground[NROWS * NCOLS], Cloud_t clouds[NCLOUDS], float thre
     for (row_pos = 0; row_pos < NROWS; row_pos++) {
         for (col_pos = 0; col_pos < NCOLS; col_pos++) {
 #pragma HLS PIPELINE II=1
+#pragma HLS UNROLL factor=2
             if (FLOATING(accessMat(water_level, row_pos, col_pos)) > r->max_water_scenario)
                 r->max_water_scenario = FLOATING(accessMat(water_level, row_pos, col_pos));
             r->total_water += accessMat(water_level, row_pos, col_pos);
