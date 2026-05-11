@@ -76,39 +76,39 @@ void do_compute(float ground[NROWS * NCOLS], Cloud_t clouds[NCLOUDS], float thre
 
         /* Rainfall — map-reduce: each cloud writes to its own slice (no conflicts) */
         const float inv_60000 = 1.0f / 60000.0f;
-        int rain_contrib[NCLOUDS][NROWS * NCOLS];
-#pragma HLS ARRAY_PARTITION variable=rain_contrib complete dim=1
+        
         long rain_total_per_cloud[NCLOUDS];
 #pragma HLS ARRAY_PARTITION variable=rain_total_per_cloud complete dim=1
-
-        // MAP: full-grid integer scan with fractional offset to match the original
-        // float-loop semantics. Constant 1600-trip pipeline; each cloud writes to its
-        // own slice → no carried dep on total_rain, no conflict on water_level.
         for (int cloud = 0; cloud < NCLOUDS; cloud++) {
-            const float c_x = clouds[cloud].x;
-            const float c_y = clouds[cloud].y;
-            const float c_r = clouds[cloud].radius;
-            const float c_int = clouds[cloud].intensity;
-            const float inv_r = 1.0f / c_r;
-            const float sqrt_int = sqrt(c_int);
+#pragma HLS UNROLL
+            rain_total_per_cloud[cloud] = 0;
+        }
 
-            float row_start = COORD_SCEN2MAT_Y(MAX(0, c_y - c_r));
-            float row_end = COORD_SCEN2MAT_Y(MIN(c_y + c_r, SCENARIO_SIZE));
-            float col_start = COORD_SCEN2MAT_X(MAX(0, c_x - c_r));
-            float col_end = COORD_SCEN2MAT_X(MIN(c_x + c_r, SCENARIO_SIZE));
-
-            // Fractional offsets so logical_pos = rr + frac matches the original
-            // loop variable row_pos = row_start + i (where rr = (int)row_pos).
-            const float frac_row = row_start - (int)row_start;
-            const float frac_col = col_start - (int)col_start;
-
-            long local_total = 0;
-            for (int rr = 0; rr < NROWS; rr++) {
-                for (int cc = 0; cc < NCOLS; cc++) {
+        // One pass over the grid, checking distance to all clouds in parallel
+        for (int rr = 0; rr < NROWS; rr++) {
+            for (int cc = 0; cc < NCOLS; cc++) {
 #pragma HLS PIPELINE II=1
-                    int rain_fixed = 0;
+                int cell_sum = 0;
+                for (int cloud = 0; cloud < NCLOUDS; cloud++) {
+#pragma HLS UNROLL
+                    const float c_x = clouds[cloud].x;
+                    const float c_y = clouds[cloud].y;
+                    const float c_r = clouds[cloud].radius;
+                    const float c_int = clouds[cloud].intensity;
+                    const float inv_r = 1.0f / c_r;
+                    const float sqrt_int = sqrt(c_int);
+
+                    float row_start = COORD_SCEN2MAT_Y(MAX(0, c_y - c_r));
+                    float row_end = COORD_SCEN2MAT_Y(MIN(c_y + c_r, SCENARIO_SIZE));
+                    float col_start = COORD_SCEN2MAT_X(MAX(0, c_x - c_r));
+                    float col_end = COORD_SCEN2MAT_X(MIN(c_x + c_r, SCENARIO_SIZE));
+
+                    const float frac_row = row_start - (int)row_start;
+                    const float frac_col = col_start - (int)col_start;
+
                     float row_logical = (float)rr + frac_row;
                     float col_logical = (float)cc + frac_col;
+                    
                     if (row_logical >= row_start && row_logical < row_end &&
                         col_logical >= col_start && col_logical < col_end) {
                         float x_pos = COORD_MAT2SCEN_X(col_logical);
@@ -117,26 +117,13 @@ void do_compute(float ground[NROWS * NCOLS], Cloud_t clouds[NCLOUDS], float thre
                         if (distance < c_r) {
                             float rain = ex_factor * MAX(0, c_int - distance * inv_r * sqrt_int);
                             float meters_per_minute = rain * inv_60000;
-                            rain_fixed = FIXED(meters_per_minute);
-                            local_total += rain_fixed;
+                            int rain_fixed = FIXED(meters_per_minute);
+                            cell_sum += rain_fixed;
+                            rain_total_per_cloud[cloud] += rain_fixed;
                         }
                     }
-                    rain_contrib[cloud][rr * NCOLS + cc] = rain_fixed;
                 }
-            }
-            rain_total_per_cloud[cloud] = local_total;
-        }
-
-        // REDUCE: sum across clouds, update water_level
-        for (int rr = 0; rr < NROWS; rr++) {
-            for (int cc = 0; cc < NCOLS; cc++) {
-#pragma HLS PIPELINE II=1
-                int sum = 0;
-                for (int cl = 0; cl < NCLOUDS; cl++) {
-#pragma HLS UNROLL
-                    sum += rain_contrib[cl][rr * NCOLS + cc];
-                }
-                accessMat(water_level, rr, cc) += sum;
+                accessMat(water_level, rr, cc) += cell_sum;
             }
         }
         for (int cl = 0; cl < NCLOUDS; cl++) {
