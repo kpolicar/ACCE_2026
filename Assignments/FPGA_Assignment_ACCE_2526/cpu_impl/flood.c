@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <time.h>
 
 /*
  * Water levels are stored with fixed preciseon
@@ -435,6 +436,8 @@ int main(int argc, char *argv[]) {
     long total_rain = 0;
 
     /* Flood simulation (time iterations) */
+    struct timespec start_time, end_time;
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
     int minute;
     for (minute = 0; minute < num_minutes && max_spillage_iter > threshold; minute++) {
 
@@ -604,6 +607,10 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
+    double compute_time = (end_time.tv_sec - start_time.tv_sec) + (end_time.tv_nsec - start_time.tv_nsec) / 1e9;
+    printf("CPU Compute Time: %.6f seconds\n", compute_time);
 
     /* Statistics: Total remaining water and maximum amount of water in a cell */
     max_water_scenario = 0.0;

@@ -9,3 +9,4 @@ vitis_hls.log
 
 # CPU reference binary
 cpu_impl/flood
+benchmark/
